@@ -30,6 +30,9 @@ func (s *Service) EnableBootstrapFirewall(ctx context.Context, opts BootstrapOpt
 
 // EnableBootstrapSSHKeealive installs server-side SSH keepalive settings during bootstrap.
 func (s *Service) EnableBootstrapSSHKeealive(ctx context.Context, opts BootstrapOptions) error {
+	if !s.sshdInstalled() {
+		return nil
+	}
 	reportBootstrapProgress(opts, "Configuring SSH keepalive…", 13)
 	if err := s.sshKeepalive().Install(ctx); err != nil {
 		return fmt.Errorf("install ssh keepalive: %w", err)

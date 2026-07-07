@@ -171,6 +171,7 @@ func TestEnableBootstrapSSHKeealive(t *testing.T) {
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
 	confPath := filepath.Join(dir, "sshd_config.d", "99-obscura.conf")
 	svc.SetSSHKeepaliveForTest(stubSSHKeepalive(t, dir))
+	svc.SetSSHDInstalledCheckForTest(func() bool { return true })
 	if err := svc.EnableBootstrapSSHKeealive(context.Background(), service.BootstrapOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -191,6 +192,24 @@ func TestEnableBootstrapSSHKeealive(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected keepalive path in manifest, got %#v", plan.RemoveFiles)
+	}
+}
+
+func TestEnableBootstrapSSHKeealiveSkipsWithoutSSHD(t *testing.T) {
+	dir := t.TempDir()
+	app := &config.App{DataDir: dir, DBPath: filepath.Join(dir, "state.db"), ConfigPath: filepath.Join(dir, "c.json"), ManifestPath: filepath.Join(dir, "m.json")}
+	st := mustOpenStore(t, app.DBPath)
+	man := manifest.NewManager(app.ManifestPath)
+	_ = man.Load()
+	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	confPath := filepath.Join(dir, "sshd_config.d", "99-obscura.conf")
+	svc.SetSSHKeepaliveForTest(stubSSHKeepalive(t, dir))
+	svc.SetSSHDInstalledCheckForTest(func() bool { return false })
+	if err := svc.EnableBootstrapSSHKeealive(context.Background(), service.BootstrapOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(confPath); err == nil {
+		t.Fatal("expected no keepalive conf when sshd is absent")
 	}
 }
 

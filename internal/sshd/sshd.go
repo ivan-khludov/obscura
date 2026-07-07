@@ -20,6 +20,22 @@ const (
 
 var reloadUnits = []string{"ssh", "sshd"}
 
+var sshdBinaryPaths = []string{"/usr/sbin/sshd", "/sbin/sshd"}
+
+// Installed reports whether the sshd binary is present on the host.
+func Installed() bool {
+	if _, err := exec.LookPath("sshd"); err == nil {
+		return true
+	}
+	for _, path := range sshdBinaryPaths {
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() {
+			return true
+		}
+	}
+	return false
+}
+
 // Config reads and writes sshd configuration files.
 type Config struct {
 	ReadFile  func(name string) ([]byte, error)

@@ -580,3 +580,15 @@ func TestKeepalive_RemoveStatError(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestInstalled(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "sshd")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	if !sshd.Installed() {
+		t.Fatal("expected sshd in PATH to be detected")
+	}
+}

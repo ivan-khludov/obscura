@@ -289,6 +289,11 @@ func (s *Service) SetSSHKeepaliveForTest(k *sshd.Keepalive) {
 	s.sshKeepaliveMgr = k
 }
 
+// SetSSHDInstalledCheckForTest overrides sshd presence detection for tests.
+func (s *Service) SetSSHDInstalledCheckForTest(fn func() bool) {
+	s.sshdInstalledFn = fn
+}
+
 // SetFallbackActiveForTest injects fallback stub active check for tests.
 func (s *Service) SetFallbackActiveForTest(fn func(context.Context) (bool, error)) {
 	s.fallbackActive = fn
