@@ -1,6 +1,7 @@
 package apply
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -86,6 +87,14 @@ func (p *Pipeline) Apply(ctx context.Context, dryRun bool) (*Result, error) {
 	if dryRun {
 		_ = os.Remove(tmpPath)
 		return &Result{ConfigPath: p.configPath, DryRun: true, Bytes: data}, nil
+	}
+	// Skip the sing-box restart when the rendered config is byte-identical to
+	// what is already on disk. This avoids needlessly restarting the service
+	// (and risking the controlling SSH session) when nothing actually changed,
+	// e.g. deleting an already-disabled VPN.
+	if current, err := os.ReadFile(p.configPath); err == nil && bytes.Equal(current, data) {
+		_ = os.Remove(tmpPath)
+		return &Result{ConfigPath: p.configPath, DryRun: false, Bytes: data}, nil
 	}
 	if err := os.Rename(tmpPath, p.configPath); err != nil {
 		_ = os.Remove(tmpPath)

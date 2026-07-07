@@ -279,6 +279,11 @@ func (s *Service) SetSSHDForTest(path string, cfg *sshd.Config, run *sshd.Runner
 	s.sshdRun = run
 }
 
+// SetSSHKeepaliveForTest injects sshd keepalive helpers for tests.
+func (s *Service) SetSSHKeepaliveForTest(k *sshd.Keepalive) {
+	s.sshKeepaliveMgr = k
+}
+
 // SetFallbackActiveForTest injects fallback stub active check for tests.
 func (s *Service) SetFallbackActiveForTest(fn func(context.Context) (bool, error)) {
 	s.fallbackActive = fn

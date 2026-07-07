@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ivan-khludov/obscura/internal/config"
@@ -15,6 +16,7 @@ import (
 	"github.com/ivan-khludov/obscura/internal/runtime"
 	"github.com/ivan-khludov/obscura/internal/service"
 	"github.com/ivan-khludov/obscura/internal/singboxcheck"
+	"github.com/ivan-khludov/obscura/internal/sshd"
 	"github.com/ivan-khludov/obscura/internal/sysctl"
 	"github.com/ivan-khludov/obscura/internal/systemd"
 )
@@ -37,6 +39,7 @@ func TestBootstrapEnablesFirewall(t *testing.T) {
 	_ = man.Load()
 	fw := &trackingFirewall{}
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, fw, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	if err := svc.EnableBootstrapFirewall(context.Background(), service.BootstrapOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +94,7 @@ func TestBootstrapProdPaths(t *testing.T) {
 	_ = man.Load()
 	fw := &trackingFirewall{}
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, fw, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetRootCheckForTest(func() bool { return true })
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "99-obscura.conf"), Reload: func() error { return nil }})
 	svc.SetSystemdForTest(&systemd.Manager{
@@ -116,6 +120,7 @@ func TestBootstrapProdInstallProgress(t *testing.T) {
 	_ = man.Load()
 	fw := &trackingFirewall{}
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, fw, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetRootCheckForTest(func() bool { return true })
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "99-obscura.conf"), Reload: func() error { return nil }})
 	svc.SetSystemdForTest(&systemd.Manager{
@@ -151,8 +156,41 @@ func TestEnableBootstrapFirewallUnavailable(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, nil, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	if err := svc.EnableBootstrapFirewall(context.Background(), service.BootstrapOptions{}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEnableBootstrapSSHKeealive(t *testing.T) {
+	dir := t.TempDir()
+	app := &config.App{DataDir: dir, DBPath: filepath.Join(dir, "state.db"), ConfigPath: filepath.Join(dir, "c.json"), ManifestPath: filepath.Join(dir, "m.json")}
+	st := mustOpenStore(t, app.DBPath)
+	man := manifest.NewManager(app.ManifestPath)
+	_ = man.Load()
+	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	confPath := filepath.Join(dir, "sshd_config.d", "99-obscura.conf")
+	svc.SetSSHKeepaliveForTest(stubSSHKeepalive(t, dir))
+	if err := svc.EnableBootstrapSSHKeealive(context.Background(), service.BootstrapOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "ClientAliveInterval 15") {
+		t.Fatalf("unexpected keepalive conf: %q", raw)
+	}
+	plan := svc.UninstallPlan()
+	found := false
+	for _, path := range plan.RemoveFiles {
+		if path == sshd.KeepaliveConfPath {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected keepalive path in manifest, got %#v", plan.RemoveFiles)
 	}
 }
 
@@ -167,6 +205,7 @@ func TestBootstrapWriteInitialConfigCheckFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, failChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetRootCheckForTest(func() bool { return true })
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }})
 	svc.SetSystemdForTest(&systemd.Manager{
@@ -190,6 +229,7 @@ func TestBootstrapRequiresRoot(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	if err := svc.Bootstrap(context.Background(), service.BootstrapOptions{}); err == nil {
 		t.Fatal("expected root error")
 	}
@@ -238,6 +278,7 @@ func TestEnableBootstrapFirewallError(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, enableFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	if err := svc.EnableBootstrapFirewall(context.Background(), service.BootstrapOptions{}); err == nil {
 		t.Fatal("expected firewall error")
 	}
@@ -254,6 +295,7 @@ func TestBootstrapProdSysctlFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetRootCheckForTest(func() bool { return true })
 	svc.SetSysctlForTest(&sysctl.Manager{
 		ConfPath: filepath.Join(dir, "sysctl.conf"),
@@ -279,6 +321,7 @@ func TestBootstrapWriteInitialConfigMkdirFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	if err := svc.Bootstrap(context.Background(), service.BootstrapOptions{}); err == nil {
 		t.Fatal("expected mkdir error")
 	}
@@ -295,6 +338,7 @@ func TestBootstrapProdSystemdInstallFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetRootCheckForTest(func() bool { return true })
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }})
 	svc.SetSystemdForTest(&systemd.Manager{
@@ -321,6 +365,7 @@ func TestBootstrapProdWithFallback(t *testing.T) {
 	_ = man.Load()
 	fw := &trackingFirewall{}
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, fw, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetRootCheckForTest(func() bool { return true })
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "99-obscura.conf"), Reload: func() error { return nil }})
 	svc.SetSystemdForTest(&systemd.Manager{
@@ -346,6 +391,7 @@ func TestBootstrapProdInstallFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, &trackingFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetRootCheckForTest(func() bool { return true })
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }})
 	inst := install.NewInstaller(filepath.Join(dir, "cache"))
@@ -366,6 +412,7 @@ func TestSyncSSHPortFromSystemWithManifestPort(t *testing.T) {
 	man.SetSSHPort(2222)
 	_ = man.Save()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SyncSSHPortFromSystemForTest()
 	if svc.SSHPort() != 2222 {
 		t.Fatalf("port=%d", svc.SSHPort())
@@ -383,6 +430,7 @@ func TestBootstrapProdRequiresRoot(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetRootCheckForTest(func() bool { return false })
 	if err := svc.Bootstrap(context.Background(), service.BootstrapOptions{}); err == nil {
 		t.Fatal("expected root error")
@@ -400,6 +448,7 @@ func TestBootstrapProdFirewallDuringBootstrap(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, enableFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetRootCheckForTest(func() bool { return true })
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }})
 	if err := svc.Bootstrap(context.Background(), service.BootstrapOptions{}); err == nil {
@@ -428,6 +477,7 @@ func TestWriteInitialConfigWriteFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
@@ -448,6 +498,7 @@ func TestBootstrapProdStartFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, &trackingFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetRootCheckForTest(func() bool { return true })
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }})
 	svc.SetInstallerForTest(installStub(t, dir))
@@ -485,6 +536,7 @@ func TestBootstrapManifestSaveFail(t *testing.T) {
 	_ = man.Load()
 	man.WriteFile = func(string, []byte, os.FileMode) error { return fmt.Errorf("save failed") }
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	if err := svc.Bootstrap(context.Background(), service.BootstrapOptions{}); err == nil {
 		t.Fatal("expected manifest save error")
 	}
@@ -512,6 +564,7 @@ func TestWriteInitialConfigProdCheckSuccess(t *testing.T) {
 	_ = man.Load()
 	checker := &checkRecorder{}
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, checker, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	if err := svc.WriteInitialConfigForTest(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -531,6 +584,7 @@ func TestWriteInitialConfigProdNoChecker(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, nil, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	if err := svc.WriteInitialConfigForTest(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -566,6 +620,7 @@ func TestBootstrapFallbackManifestSaveFail(t *testing.T) {
 		return os.WriteFile(name, data, perm)
 	}
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetFallbackInstallForTest(func(context.Context) error { return nil })
 	if err := svc.Bootstrap(context.Background(), service.BootstrapOptions{WithFallbackStub: true}); err == nil {
 		t.Fatal("expected fallback manifest save error")

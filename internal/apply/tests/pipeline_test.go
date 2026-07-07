@@ -191,6 +191,47 @@ func TestApply_Success(t *testing.T) {
 	}
 }
 
+func TestApply_SkipsReloadWhenUnchanged(t *testing.T) {
+	reloader := &reloadRecorder{}
+	p, st, cfgPath := newTestPipeline(t, nil, fakeChecker{}, reloader, apply.Options{})
+	seedVPNWithClient(t, st)
+	ctx := context.Background()
+
+	if _, err := p.Apply(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if reloader.calls != 1 {
+		t.Fatalf("expected 1 reload after first apply, got %d", reloader.calls)
+	}
+	info, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstModTime := info.ModTime()
+
+	// Applying again with an identical config must not restart sing-box.
+	result, err := p.Apply(ctx, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.DryRun || len(result.Bytes) == 0 {
+		t.Fatalf("unexpected apply result: %#v", result)
+	}
+	if reloader.calls != 1 {
+		t.Fatalf("expected no extra reload for unchanged config, got %d", reloader.calls)
+	}
+	info, err = os.Stat(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.ModTime().Equal(firstModTime) {
+		t.Fatal("expected config file untouched when unchanged")
+	}
+	if _, err := os.Stat(cfgPath + ".tmp"); !os.IsNotExist(err) {
+		t.Fatalf("expected temp config removed, got err=%v", err)
+	}
+}
+
 func TestApply_RenderError(t *testing.T) {
 	dir := t.TempDir()
 	st := openTestStore(t, dir)

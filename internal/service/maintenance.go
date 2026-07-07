@@ -93,6 +93,9 @@ func (s *Service) uninstallFull(ctx context.Context, wipeData bool) error {
 			_ = s.firewall.DeleteRule(ctx, rule)
 		}
 	}
+	if err := s.sshKeepalive().Remove(ctx); err != nil {
+		return err
+	}
 	for _, path := range plan.RemoveFiles {
 		_ = os.Remove(path)
 	}

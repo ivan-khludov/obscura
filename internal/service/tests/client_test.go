@@ -114,7 +114,7 @@ func TestRemoveClient_WithRemaining(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := svc.AddClient(ctx, service.AddClientInput{VPNName: "main", Name: "phone"}, false); err != nil {
+	if _, _, err := svc.AddClient(ctx, service.AddClientInput{VPNName: "main", Name: "phone"}, true); err != nil {
 		t.Fatal(err)
 	}
 	reloader.called = false

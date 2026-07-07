@@ -35,6 +35,7 @@ func TestRestoreBackupCheckAndReload(t *testing.T) {
 	checker := &checkRecorder{}
 	reloader := &reloadRecorder{}
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, checker, reloader)
+	wireStubSSHKeepalive(t, svc, dir)
 	ctx := context.Background()
 	archive := filepath.Join(dir, "backup.tar.gz")
 	if err := backup.Create(archive, []string{app.DBPath}); err != nil {
@@ -84,6 +85,7 @@ func TestUninstallFull(t *testing.T) {
 	_ = man.Save()
 	fw := &trackingFirewall{}
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, fw, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	confPath := filepath.Join(dir, "99-obscura.conf")
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: confPath, Reload: func() error { return nil }})
 	ctx := context.Background()
@@ -122,6 +124,7 @@ func TestRestoreBackupWithoutCheckAndReload(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, nil, nil)
+	wireStubSSHKeepalive(t, svc, dir)
 	archive := filepath.Join(dir, "backup.tar.gz")
 	if err := backup.Create(archive, []string{app.DBPath}); err != nil {
 		t.Fatal(err)
@@ -141,6 +144,7 @@ func TestRestoreBackupCheckFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, failChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	archive := filepath.Join(dir, "backup.tar.gz")
 	if err := backup.Create(archive, []string{app.DBPath}); err != nil {
 		t.Fatal(err)
@@ -163,6 +167,7 @@ func TestUninstallFullWithPlan(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(dir, "extra.txt"), []byte("x"), 0o644)
 	_ = os.WriteFile(filepath.Join(dir, "bin"), []byte("x"), 0o755)
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, &trackingFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
 	if err := svc.UninstallFull(context.Background(), false); err != nil {
 		t.Fatal(err)
@@ -183,6 +188,7 @@ func TestCreateBackupMkdirFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	if _, err := svc.CreateBackup(context.Background()); err == nil {
 		t.Fatal("expected mkdir error")
 	}
@@ -198,6 +204,7 @@ func TestRestoreBackupReloadFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, &reloadFail{})
+	wireStubSSHKeepalive(t, svc, dir)
 	archive := filepath.Join(dir, "backup.tar.gz")
 	if err := backup.Create(archive, []string{app.DBPath}); err != nil {
 		t.Fatal(err)
@@ -226,6 +233,7 @@ func TestUninstallSysctlFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetSysctlForTest(&sysctl.Manager{
 		ConfPath:   filepath.Join(dir, "sysctl.conf"),
 		RemoveFile: func(string) error { return fmt.Errorf("remove failed") },
@@ -305,6 +313,7 @@ func TestUninstallFullStopServices(t *testing.T) {
 	man.AddService("sing-box.service")
 	_ = man.Save()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
 	if err := svc.UninstallFull(context.Background(), false); err != nil {
 		t.Fatal(err)
@@ -322,6 +331,7 @@ func TestUninstallFullRemoveFiles(t *testing.T) {
 	_ = man.Save()
 	_ = os.WriteFile(extra, []byte("x"), 0o644)
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
 	if err := svc.UninstallFull(context.Background(), false); err != nil {
 		t.Fatal(err)

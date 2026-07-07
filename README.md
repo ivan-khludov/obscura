@@ -41,14 +41,36 @@ Enter the password when prompted. You are now inside your server.
 
 Continue with the [Install](#install) and [Quick start](#quick-start) sections below.
 
+### Keeping your SSH session alive
+
+Some operations (creating, editing, or deleting a VPN) update the firewall and restart sing-box. Obscura never removes the SSH firewall rule and skips the restart when nothing changed, so your session stays up. Still, a shaky network or a low-memory VPS can occasionally drop an SSH connection. To make sessions robust:
+
+- **Bootstrap** configures server-side SSH keepalive automatically (`ClientAliveInterval 15`, `ClientAliveCountMax 6` in `/etc/ssh/sshd_config.d/99-obscura.conf`).
+
+- Run obscura inside `tmux` (or `screen`) so the menu survives a disconnect:
+
+```bash
+tmux new -s obscura      # start
+sudo obscura
+# if disconnected: ssh back in, then `tmux attach -t obscura`
+```
+
+- Optionally enable keepalives on your local machine in `~/.ssh/config` (extra protection from the client side):
+
+```
+Host *
+    ServerAliveInterval 15
+    ServerAliveCountMax 6
+```
+
 ## Install
 
 **From a release:**
 
 ```bash
-VERSION=v0.0.1  # see https://github.com/ivan-khludov/obscura/releases for the latest version
+VERSION=0.0.1  # see https://github.com/ivan-khludov/obscura/releases for the latest version
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-curl -fsSL "https://github.com/ivan-khludov/obscura/releases/download/${VERSION}/obscura_${VERSION}_linux_${ARCH}.tar.gz" \
+curl -fsSL "https://github.com/ivan-khludov/obscura/releases/download/v${VERSION}/obscura_${VERSION}_linux_${ARCH}.tar.gz" \
   | sudo tar -xz -C /usr/local/bin obscura
 ```
 

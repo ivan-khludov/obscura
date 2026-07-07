@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	"github.com/ivan-khludov/obscura/internal/runtime"
 	"github.com/ivan-khludov/obscura/internal/service"
 	"github.com/ivan-khludov/obscura/internal/singboxcheck"
+	"github.com/ivan-khludov/obscura/internal/sshd"
 	"github.com/ivan-khludov/obscura/internal/store"
 	"github.com/ivan-khludov/obscura/internal/systemd"
 )
@@ -77,6 +79,25 @@ func (r *reloadRecorder) IsActive(_ context.Context) (bool, error) { return fals
 
 var _ apply.ServiceManager = (*reloadRecorder)(nil)
 
+func stubSSHKeepalive(t *testing.T, dir string) *sshd.Keepalive {
+	t.Helper()
+	confPath := filepath.Join(dir, "sshd_config.d", "99-obscura.conf")
+	return &sshd.Keepalive{
+		ConfPath: confPath,
+		Config:   &sshd.Config{ReadFile: os.ReadFile, WriteFile: os.WriteFile},
+		Runner: &sshd.Runner{
+			RunCommand: func(context.Context, string, ...string) ([]byte, error) {
+				return nil, nil
+			},
+		},
+	}
+}
+
+func wireStubSSHKeepalive(t *testing.T, svc *service.Service, dir string) {
+	t.Helper()
+	svc.SetSSHKeepaliveForTest(stubSSHKeepalive(t, dir))
+}
+
 func newTestService(t *testing.T) (*service.Service, *store.Store) {
 	t.Helper()
 	dir := t.TempDir()
@@ -92,6 +113,7 @@ func newTestService(t *testing.T) (*service.Service, *store.Store) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	return svc, st
 }
 
