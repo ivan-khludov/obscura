@@ -20,19 +20,22 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Update version in README
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          sed -i "s|VERSION=[0-9][0-9.]*|VERSION=${VERSION}|g" README.md
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add README.md
-          git diff --cached --quiet || git commit -m "chore: update version to ${VERSION} in README"
-          git push origin HEAD:main
-
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update version in README
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          git fetch origin main
+          git checkout main
+          git pull --ff-only origin main
+          sed -i "s|VERSION=[0-9][0-9.]*|VERSION=${VERSION}|g" README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --cached --quiet || git commit -m "chore: update version to ${VERSION} in README"
+          git push origin main
