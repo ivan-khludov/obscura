@@ -77,18 +77,64 @@ func (s *Service) restoreBackup(ctx context.Context, archivePath string) error {
 
 // uninstallPlan returns the full uninstall plan from manifest.
 func (s *Service) uninstallPlan() manifest.UninstallPlan {
-	return s.manifest.PlanFullUninstall()
+	return s.sanitizeUninstallPlan(s.manifest.PlanFullUninstall())
+}
+
+// sanitizeUninstallPlan drops the SSH firewall rule (never removed, to keep the
+// session alive) and appends the obscura binary itself so a full uninstall
+// leaves nothing behind.
+func (s *Service) sanitizeUninstallPlan(plan manifest.UninstallPlan) manifest.UninstallPlan {
+	sshPort := s.SSHPort()
+	rules := plan.RemoveFirewall[:0:0]
+	for _, rule := range plan.RemoveFirewall {
+		if isSSHFirewallRule(rule, sshPort) {
+			continue
+		}
+		rules = append(rules, rule)
+	}
+	plan.RemoveFirewall = rules
+	if path, ok := s.obscuraBinaryPath(); ok {
+		plan.RemoveBinaries = append(plan.RemoveBinaries, path)
+	}
+	return plan
+}
+
+// obscuraBinaryPath resolves the running obscura binary path for removal during
+// a full uninstall. It is disabled in dev mode so tests and local builds are
+// never deleted.
+func (s *Service) obscuraBinaryPath() (string, bool) {
+	if s.app.DevMode {
+		return "", false
+	}
+	self := s.selfExecutable
+	if self == nil {
+		self = os.Executable
+	}
+	path, err := self()
+	if err != nil {
+		return "", false
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	return path, true
 }
 
 // uninstallFull executes a full uninstall using the manifest plan.
 func (s *Service) uninstallFull(ctx context.Context, wipeData bool) error {
-	plan := s.manifest.PlanFullUninstall()
+	plan := s.sanitizeUninstallPlan(s.manifest.PlanFullUninstall())
 	for _, svc := range plan.StopServices {
 		_ = s.systemd.Stop(ctx)
 		_ = s.systemd.Disable(ctx)
 		_ = svc
 	}
+	// Re-assert SSH allow before ufw reloads so DeleteRule cannot drop the session.
+	s.ensureSSHFirewallAllowed(ctx)
+	sshPort := s.SSHPort()
 	for _, rule := range plan.RemoveFirewall {
+		if isSSHFirewallRule(rule, sshPort) {
+			continue
+		}
 		if s.firewall != nil {
 			_ = s.firewall.DeleteRule(ctx, rule)
 		}
@@ -99,14 +145,28 @@ func (s *Service) uninstallFull(ctx context.Context, wipeData bool) error {
 	for _, path := range plan.RemoveFiles {
 		_ = os.Remove(path)
 	}
+	obscuraBin, removeObscura := s.obscuraBinaryPath()
 	for _, path := range plan.RemoveBinaries {
+		if removeObscura && path == obscuraBin {
+			continue
+		}
 		_ = os.Remove(path)
 	}
 	if err := s.sysctl.Remove(); err != nil {
 		return err
 	}
 	if wipeData {
-		return os.RemoveAll(s.app.DataDir)
+		if err := os.RemoveAll(s.app.DataDir); err != nil {
+			return err
+		}
+	} else if err := os.Remove(s.app.ManifestPath); err != nil {
+		return err
 	}
-	return os.Remove(s.app.ManifestPath)
+	// Remove the obscura binary last; on Linux deleting a running executable is safe.
+	if removeObscura {
+		if err := os.Remove(obscuraBin); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return nil
 }

@@ -41,28 +41,6 @@ Enter the password when prompted. You are now inside your server.
 
 Continue with the [Install](#install) and [Quick start](#quick-start) sections below.
 
-### Keeping your SSH session alive
-
-Some operations (creating, editing, or deleting a VPN) update the firewall and restart sing-box. Obscura never removes the SSH firewall rule and skips the restart when nothing changed, so your session stays up. Still, a shaky network or a low-memory VPS can occasionally drop an SSH connection. To make sessions robust:
-
-- **Bootstrap** configures server-side SSH keepalive automatically (`ClientAliveInterval 15`, `ClientAliveCountMax 6` in `/etc/ssh/sshd_config.d/99-obscura.conf`).
-
-- Run obscura inside `tmux` (or `screen`) so the menu survives a disconnect:
-
-```bash
-tmux new -s obscura      # start
-sudo obscura
-# if disconnected: ssh back in, then `tmux attach -t obscura`
-```
-
-- Optionally enable keepalives on your local machine in `~/.ssh/config` (extra protection from the client side):
-
-```
-Host *
-    ServerAliveInterval 15
-    ServerAliveCountMax 6
-```
-
 ## Install
 
 **From a release:**
@@ -117,6 +95,23 @@ sudo obscura vpn create --name my-vpn --protocol vless --client-name phone
 # Get the client connection URI and QR code
 sudo obscura client show --vpn my-vpn --name phone --qr
 ```
+
+## Uninstall
+
+Preview what a full uninstall will remove:
+
+```bash
+sudo obscura uninstall --dry-run
+```
+
+Perform the full uninstall (removes sing-box, VPN configs, firewall rules for VPN ports, and the obscura binary itself):
+
+```bash
+sudo obscura uninstall --full --confirm destroy
+# add --wipe-data to also delete the state database and all VPN/client data
+```
+
+The uninstall never removes the SSH firewall rule, so you keep access to your server even if ufw is active.
 
 ## Documentation
 

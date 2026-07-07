@@ -232,6 +232,11 @@ func (s *Service) SyncFirewallPortForTest(ctx context.Context, vpn *domain.VPN, 
 	return s.syncFirewallPort(ctx, vpn, oldPort, newPort)
 }
 
+// SetSelfExecutableForTest injects obscura binary path resolution for tests.
+func (s *Service) SetSelfExecutableForTest(fn func() (string, error)) {
+	s.selfExecutable = fn
+}
+
 // SetBackupGlobForTest injects backup archive globbing for tests.
 func (s *Service) SetBackupGlobForTest(fn func(pattern string) ([]string, error)) {
 	s.backupGlob = fn

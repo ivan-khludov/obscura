@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/ivan-khludov/obscura/internal/protocol/wireguard"
@@ -45,6 +46,26 @@ func firewallRuleSpecs(port int, protos []string) []string {
 	return rules
 }
 
+// firewallRulePort parses the port from a firewall rule spec like "443/tcp".
+func firewallRulePort(spec string) (int, bool) {
+	spec = strings.TrimSpace(spec)
+	portStr := spec
+	if idx := strings.IndexByte(spec, '/'); idx >= 0 {
+		portStr = spec[:idx]
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0, false
+	}
+	return port, true
+}
+
+// isSSHFirewallRule reports whether a firewall rule spec targets the SSH port.
+func isSSHFirewallRule(spec string, sshPort int) bool {
+	port, ok := firewallRulePort(spec)
+	return ok && port == sshPort
+}
+
 // openFirewallPort updates firewall rules for a listen port.
 func (s *Service) openFirewallPort(ctx context.Context, port int, protos []string) {
 	if s.firewall == nil || !s.firewall.IsAvailable() {
@@ -62,8 +83,8 @@ func (s *Service) openFirewallPort(ctx context.Context, port int, protos []strin
 
 // ensureSSHFirewallAllowed re-asserts the SSH allow rule so that any ufw
 // mutation (which reloads the whole ruleset) can never leave the SSH port
-// without an allow rule and drop the controlling session. ufw allow is
-// idempotent, so calling this repeatedly is safe.
+// without an allow rule and drop the controlling session. The ufw allow
+// command is idempotent, so calling this repeatedly is safe.
 func (s *Service) ensureSSHFirewallAllowed(ctx context.Context) {
 	if s.firewall == nil || !s.firewall.IsAvailable() {
 		return

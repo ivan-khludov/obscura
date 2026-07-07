@@ -55,6 +55,7 @@ type Service struct {
 	fallbackInstall  func(ctx context.Context) error
 	httpMarshal      func(httpproxy.ProtocolData) ([]byte, error)
 	backupGlob       func(pattern string) ([]string, error)
+	selfExecutable   func() (string, error)
 
 	VPNs         *VPNService
 	Clients      *ClientService

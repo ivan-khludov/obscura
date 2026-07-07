@@ -172,11 +172,11 @@ func TestDeleteVPNRemovesFirewallRule(t *testing.T) {
 	if len(fw.deleted) != 1 || fw.deleted[0] != "1082/tcp" {
 		t.Fatalf("expected firewall delete, got %#v", fw.deleted)
 	}
-	// The SSH allow rule must survive VPN deletion so the control session
-	// is never dropped by the ufw reload.
+	// The SSH allow rule survives VPN deletion in ufw, and the uninstall plan
+	// never lists it, so the controlling session is never dropped.
 	plan = svc.UninstallPlan()
-	if len(plan.RemoveFirewall) != 1 || plan.RemoveFirewall[0] != "22/tcp" {
-		t.Fatalf("expected only SSH rule to remain, got %#v", plan.RemoveFirewall)
+	if len(plan.RemoveFirewall) != 0 {
+		t.Fatalf("expected no firewall rules in plan (SSH filtered), got %#v", plan.RemoveFirewall)
 	}
 }
 

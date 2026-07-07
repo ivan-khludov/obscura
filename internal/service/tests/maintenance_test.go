@@ -154,6 +154,112 @@ func TestRestoreBackupCheckFail(t *testing.T) {
 	}
 }
 
+func TestUninstallPlanFiltersSSHRule(t *testing.T) {
+	dir := t.TempDir()
+	app := &config.App{DataDir: dir, DBPath: filepath.Join(dir, "state.db"), ConfigPath: filepath.Join(dir, "c.json"), ManifestPath: filepath.Join(dir, "manifest.json")}
+	st := mustOpenStore(t, app.DBPath)
+	man := manifest.NewManager(app.ManifestPath)
+	_ = man.Load()
+	man.SetSSHPort(22)
+	man.AddFirewallRule("22/tcp")
+	man.AddFirewallRule("443/tcp")
+	_ = man.Save()
+	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, &trackingFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	plan := svc.UninstallPlan()
+	if len(plan.RemoveFirewall) != 1 || plan.RemoveFirewall[0] != "443/tcp" {
+		t.Fatalf("expected only VPN rule in plan, got %#v", plan.RemoveFirewall)
+	}
+}
+
+func TestUninstallFullKeepsSSHRule(t *testing.T) {
+	dir := t.TempDir()
+	app := &config.App{DataDir: dir, DBPath: filepath.Join(dir, "state.db"), ConfigPath: filepath.Join(dir, "c.json"), ManifestPath: filepath.Join(dir, "manifest.json")}
+	st := mustOpenStore(t, app.DBPath)
+	man := manifest.NewManager(app.ManifestPath)
+	_ = man.Load()
+	man.SetSSHPort(22)
+	man.AddFirewallRule("22/tcp")
+	man.AddFirewallRule("443/tcp")
+	_ = man.Save()
+	fw := &trackingFirewall{}
+	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, fw, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
+	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
+	if err := svc.UninstallFull(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	for _, rule := range fw.deleted {
+		if rule == "22/tcp" {
+			t.Fatalf("SSH rule must not be deleted, got %#v", fw.deleted)
+		}
+	}
+	if len(fw.deleted) != 1 || fw.deleted[0] != "443/tcp" {
+		t.Fatalf("expected only VPN rule deleted, got %#v", fw.deleted)
+	}
+}
+
+func TestUninstallFullRemovesObscuraBinary(t *testing.T) {
+	dir := t.TempDir()
+	app := &config.App{DataDir: dir, DBPath: filepath.Join(dir, "state.db"), ConfigPath: filepath.Join(dir, "c.json"), ManifestPath: filepath.Join(dir, "manifest.json"), DevMode: false}
+	st := mustOpenStore(t, app.DBPath)
+	man := manifest.NewManager(app.ManifestPath)
+	_ = man.Load()
+	_ = man.Save()
+	binPath := filepath.Join(dir, "obscura")
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, &trackingFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
+	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
+	svc.SetSelfExecutableForTest(func() (string, error) { return binPath, nil })
+	plan := svc.UninstallPlan()
+	found := false
+	for _, b := range plan.RemoveBinaries {
+		if b == binPath {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected obscura binary in plan, got %#v", plan.RemoveBinaries)
+	}
+	if err := svc.UninstallFull(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(binPath); !os.IsNotExist(err) {
+		t.Fatalf("expected obscura binary removed, err=%v", err)
+	}
+}
+
+func TestUninstallFullDevModeKeepsBinary(t *testing.T) {
+	dir := t.TempDir()
+	app := &config.App{DataDir: dir, DBPath: filepath.Join(dir, "state.db"), ConfigPath: filepath.Join(dir, "c.json"), ManifestPath: filepath.Join(dir, "manifest.json"), DevMode: true}
+	st := mustOpenStore(t, app.DBPath)
+	man := manifest.NewManager(app.ManifestPath)
+	_ = man.Load()
+	_ = man.Save()
+	binPath := filepath.Join(dir, "obscura")
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, &trackingFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
+	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
+	svc.SetSelfExecutableForTest(func() (string, error) { return binPath, nil })
+	plan := svc.UninstallPlan()
+	for _, b := range plan.RemoveBinaries {
+		if b == binPath {
+			t.Fatalf("dev mode must not list obscura binary, got %#v", plan.RemoveBinaries)
+		}
+	}
+	if err := svc.UninstallFull(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(binPath); err != nil {
+		t.Fatalf("expected obscura binary preserved in dev mode, err=%v", err)
+	}
+}
+
 func TestUninstallFullWithPlan(t *testing.T) {
 	dir := t.TempDir()
 	app := &config.App{DataDir: dir, DBPath: filepath.Join(dir, "state.db"), ConfigPath: filepath.Join(dir, "c.json"), ManifestPath: filepath.Join(dir, "manifest.json")}
