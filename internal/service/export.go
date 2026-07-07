@@ -232,6 +232,11 @@ func (s *Service) SyncFirewallPortForTest(ctx context.Context, vpn *domain.VPN, 
 	return s.syncFirewallPort(ctx, vpn, oldPort, newPort)
 }
 
+// SetSelfExecutableForTest injects obscura binary path resolution for tests.
+func (s *Service) SetSelfExecutableForTest(fn func() (string, error)) {
+	s.selfExecutable = fn
+}
+
 // SetBackupGlobForTest injects backup archive globbing for tests.
 func (s *Service) SetBackupGlobForTest(fn func(pattern string) ([]string, error)) {
 	s.backupGlob = fn
@@ -277,6 +282,16 @@ func (s *Service) SetSSHDForTest(path string, cfg *sshd.Config, run *sshd.Runner
 	s.sshdPath = path
 	s.sshdCfg = cfg
 	s.sshdRun = run
+}
+
+// SetSSHKeepaliveForTest injects sshd keepalive helpers for tests.
+func (s *Service) SetSSHKeepaliveForTest(k *sshd.Keepalive) {
+	s.sshKeepaliveMgr = k
+}
+
+// SetSSHDInstalledCheckForTest overrides sshd presence detection for tests.
+func (s *Service) SetSSHDInstalledCheckForTest(fn func() bool) {
+	s.sshdInstalledFn = fn
 }
 
 // SetFallbackActiveForTest injects fallback stub active check for tests.

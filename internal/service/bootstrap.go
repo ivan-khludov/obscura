@@ -8,6 +8,7 @@ import (
 
 	"github.com/ivan-khludov/obscura/internal/fallback"
 	"github.com/ivan-khludov/obscura/internal/install"
+	"github.com/ivan-khludov/obscura/internal/sshd"
 	"github.com/ivan-khludov/obscura/internal/sysctl"
 	"github.com/ivan-khludov/obscura/internal/systemd"
 )
@@ -24,6 +25,19 @@ func (s *Service) EnableBootstrapFirewall(ctx context.Context, opts BootstrapOpt
 		return fmt.Errorf("enable firewall: %w", err)
 	}
 	s.manifest.AddFirewallRule(fmt.Sprintf("%d/tcp", sshPort))
+	return nil
+}
+
+// EnableBootstrapSSHKeealive installs server-side SSH keepalive settings during bootstrap.
+func (s *Service) EnableBootstrapSSHKeealive(ctx context.Context, opts BootstrapOptions) error {
+	if !s.sshdInstalled() {
+		return nil
+	}
+	reportBootstrapProgress(opts, "Configuring SSH keepalive…", 13)
+	if err := s.sshKeepalive().Install(ctx); err != nil {
+		return fmt.Errorf("install ssh keepalive: %w", err)
+	}
+	s.manifest.AddFile(sshd.KeepaliveConfPath, true)
 	return nil
 }
 
@@ -60,6 +74,9 @@ func (s *Service) bootstrap(ctx context.Context, opts BootstrapOptions) error {
 	}
 	if !s.app.DevMode {
 		if err := s.EnableBootstrapFirewall(ctx, opts); err != nil {
+			return err
+		}
+		if err := s.EnableBootstrapSSHKeealive(ctx, opts); err != nil {
 			return err
 		}
 	}

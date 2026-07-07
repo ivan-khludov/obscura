@@ -46,9 +46,9 @@ Continue with the [Install](#install) and [Quick start](#quick-start) sections b
 **From a release:**
 
 ```bash
-VERSION=v0.0.1  # see https://github.com/ivan-khludov/obscura/releases for the latest version
+VERSION=0.0.1  # see https://github.com/ivan-khludov/obscura/releases for the latest version
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
-curl -fsSL "https://github.com/ivan-khludov/obscura/releases/download/${VERSION}/obscura_${VERSION}_linux_${ARCH}.tar.gz" \
+curl -fsSL "https://github.com/ivan-khludov/obscura/releases/download/v${VERSION}/obscura_${VERSION}_linux_${ARCH}.tar.gz" \
   | sudo tar -xz -C /usr/local/bin obscura
 ```
 
@@ -95,6 +95,23 @@ sudo obscura vpn create --name my-vpn --protocol vless --client-name phone
 # Get the client connection URI and QR code
 sudo obscura client show --vpn my-vpn --name phone --qr
 ```
+
+## Uninstall
+
+Preview what a full uninstall will remove:
+
+```bash
+sudo obscura uninstall --dry-run
+```
+
+Perform the full uninstall (removes sing-box, VPN configs, firewall rules for VPN ports, and the obscura binary itself):
+
+```bash
+sudo obscura uninstall --full --confirm destroy
+# add --wipe-data to also delete the state database and all VPN/client data
+```
+
+The uninstall never removes the SSH firewall rule, so you keep access to your server even if ufw is active.
 
 ## Documentation
 

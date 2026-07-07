@@ -50,10 +50,13 @@ type Service struct {
 	sshdPath         string
 	sshdCfg          *sshd.Config
 	sshdRun          *sshd.Runner
+	sshKeepaliveMgr  *sshd.Keepalive
+	sshdInstalledFn  func() bool
 	fallbackActive   func(ctx context.Context) (bool, error)
 	fallbackInstall  func(ctx context.Context) error
 	httpMarshal      func(httpproxy.ProtocolData) ([]byte, error)
 	backupGlob       func(pattern string) ([]string, error)
+	selfExecutable   func() (string, error)
 
 	VPNs         *VPNService
 	Clients      *ClientService

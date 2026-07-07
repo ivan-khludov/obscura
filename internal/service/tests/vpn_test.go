@@ -172,9 +172,11 @@ func TestDeleteVPNRemovesFirewallRule(t *testing.T) {
 	if len(fw.deleted) != 1 || fw.deleted[0] != "1082/tcp" {
 		t.Fatalf("expected firewall delete, got %#v", fw.deleted)
 	}
+	// The SSH allow rule survives VPN deletion in ufw, and the uninstall plan
+	// never lists it, so the controlling session is never dropped.
 	plan = svc.UninstallPlan()
 	if len(plan.RemoveFirewall) != 0 {
-		t.Fatalf("expected manifest firewall cleared, got %#v", plan.RemoveFirewall)
+		t.Fatalf("expected no firewall rules in plan (SSH filtered), got %#v", plan.RemoveFirewall)
 	}
 }
 
@@ -336,8 +338,9 @@ func TestUpdateVPN_FirewallPortSync(t *testing.T) {
 	if len(fw.deleted) != 1 || fw.deleted[0] != "1095/tcp" {
 		t.Fatalf("expected old rule deleted, got %#v", fw.deleted)
 	}
-	if len(fw.allowed) != 1 || fw.allowed[0] != "1195/tcp" {
-		t.Fatalf("expected new rule allowed, got %#v", fw.allowed)
+	// SSH is re-asserted before the ufw reload, then the new VPN port is allowed.
+	if len(fw.allowed) != 2 || fw.allowed[0] != "22/tcp" || fw.allowed[1] != "1195/tcp" {
+		t.Fatalf("expected SSH and new rule allowed, got %#v", fw.allowed)
 	}
 }
 
@@ -1113,6 +1116,7 @@ func TestVPNStoreFaults(t *testing.T) {
 		man.AddFirewallRule("1080/tcp")
 		_ = man.Save()
 		svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, nil, singboxcheck.NopChecker{}, systemd.NopManager{})
+		wireStubSSHKeepalive(t, svc, dir)
 		svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
 		if err := svc.UninstallFull(ctx, false); err != nil {
 			t.Fatal(err)

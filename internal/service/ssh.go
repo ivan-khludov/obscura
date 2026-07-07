@@ -28,6 +28,20 @@ func (s *Service) sshRunner() *sshd.Runner {
 	return new(sshd.Runner)
 }
 
+func (s *Service) sshKeepalive() *sshd.Keepalive {
+	if s.sshKeepaliveMgr != nil {
+		return s.sshKeepaliveMgr
+	}
+	return sshd.NewKeepalive()
+}
+
+func (s *Service) sshdInstalled() bool {
+	if s.sshdInstalledFn != nil {
+		return s.sshdInstalledFn()
+	}
+	return sshd.Installed()
+}
+
 // SSHPort returns the configured SSH listen port (manifest, sshd_config, or default 22).
 func (s *Service) SSHPort() int {
 	if port := s.manifest.SSHPort(); port > 0 {

@@ -411,3 +411,357 @@ func TestTestConfig_packageFunc(t *testing.T) {
 		t.Fatalf("TestConfig: %v", err)
 	}
 }
+
+func TestKeepalive_Content(t *testing.T) {
+	k := sshd.NewKeepalive()
+	want := "ClientAliveInterval 15\nClientAliveCountMax 6\n"
+	if got := k.Content(); got != want {
+		t.Fatalf("Content() = %q, want %q", got, want)
+	}
+	var nilKeepalive *sshd.Keepalive
+	if got := nilKeepalive.Content(); got != want {
+		t.Fatalf("nil Content() = %q, want %q", got, want)
+	}
+}
+
+func TestKeepalive_Install(t *testing.T) {
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "sshd_config.d", "99-obscura.conf")
+	reloaded := false
+	k := &sshd.Keepalive{
+		ConfPath: confPath,
+		Config:   &sshd.Config{ReadFile: os.ReadFile, WriteFile: os.WriteFile},
+		Runner: &sshd.Runner{
+			RunCommand: func(_ context.Context, name string, args ...string) ([]byte, error) {
+				if name == "sshd" && len(args) >= 1 && args[0] == "-t" {
+					return nil, nil
+				}
+				if name == "systemctl" && len(args) == 2 && args[0] == "reload" {
+					reloaded = true
+					return nil, nil
+				}
+				return nil, errors.New("unexpected command")
+			},
+		},
+	}
+	if err := k.Install(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != k.Content() {
+		t.Fatalf("conf = %q", raw)
+	}
+	if !reloaded {
+		t.Fatal("expected ssh reload")
+	}
+}
+
+func TestKeepalive_InstallTestConfigFail(t *testing.T) {
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "sshd_config.d", "99-obscura.conf")
+	k := &sshd.Keepalive{
+		ConfPath: confPath,
+		Config:   &sshd.Config{ReadFile: os.ReadFile, WriteFile: os.WriteFile},
+		Runner: &sshd.Runner{
+			RunCommand: func(context.Context, string, ...string) ([]byte, error) {
+				return []byte("bad"), errors.New("sshd -t failed")
+			},
+		},
+	}
+	err := k.Install(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "sshd test after keepalive install") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, statErr := os.Stat(confPath); !os.IsNotExist(statErr) {
+		t.Fatalf("expected conf removed on failure, err=%v", statErr)
+	}
+}
+
+func TestKeepalive_Remove(t *testing.T) {
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "sshd_config.d", "99-obscura.conf")
+	if err := os.MkdirAll(filepath.Dir(confPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(confPath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := false
+	k := &sshd.Keepalive{
+		ConfPath: confPath,
+		Runner: &sshd.Runner{
+			RunCommand: func(_ context.Context, name string, args ...string) ([]byte, error) {
+				if name == "systemctl" && len(args) == 2 && args[0] == "reload" {
+					reloaded = true
+					return nil, nil
+				}
+				return nil, errors.New("unexpected")
+			},
+		},
+	}
+	if err := k.Remove(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(confPath); !os.IsNotExist(err) {
+		t.Fatalf("expected conf removed, err=%v", err)
+	}
+	if !reloaded {
+		t.Fatal("expected ssh reload")
+	}
+}
+
+func TestKeepalive_InstallMkdirFail(t *testing.T) {
+	k := &sshd.Keepalive{
+		ConfPath: filepath.Join(t.TempDir(), "blocked", "99-obscura.conf"),
+		MkdirAll: func(string, os.FileMode) error { return errors.New("mkdir failed") },
+	}
+	err := k.Install(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "mkdir sshd_config.d") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestKeepalive_InstallReloadFail(t *testing.T) {
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "sshd_config.d", "99-obscura.conf")
+	k := &sshd.Keepalive{
+		ConfPath: confPath,
+		Config:   &sshd.Config{ReadFile: os.ReadFile, WriteFile: os.WriteFile},
+		Runner: &sshd.Runner{
+			RunCommand: func(_ context.Context, name string, args ...string) ([]byte, error) {
+				if name == "sshd" {
+					return nil, nil
+				}
+				return []byte("reload failed"), errors.New("reload failed")
+			},
+		},
+	}
+	err := k.Install(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "reload ssh after keepalive install") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, statErr := os.Stat(confPath); !os.IsNotExist(statErr) {
+		t.Fatalf("expected conf removed on reload failure, err=%v", statErr)
+	}
+}
+
+func TestKeepalive_RemoveMissing(t *testing.T) {
+	reloaded := false
+	k := &sshd.Keepalive{
+		ConfPath: filepath.Join(t.TempDir(), "missing.conf"),
+		Runner: &sshd.Runner{
+			RunCommand: func(context.Context, string, ...string) ([]byte, error) {
+				reloaded = true
+				return nil, nil
+			},
+		},
+	}
+	if err := k.Remove(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if reloaded {
+		t.Fatal("expected no reload when keepalive file is absent")
+	}
+}
+
+func TestKeepalive_RemoveStatError(t *testing.T) {
+	dir := t.TempDir()
+	parent := filepath.Join(dir, "locked")
+	if err := os.Mkdir(parent, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o755) })
+	k := &sshd.Keepalive{ConfPath: filepath.Join(parent, "99-obscura.conf")}
+	err := k.Remove(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "stat ssh keepalive conf") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestInstalled(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "sshd")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	if !sshd.Installed() {
+		t.Fatal("expected sshd in PATH to be detected")
+	}
+}
+
+func TestInstalledAbsent(t *testing.T) {
+	restore := sshd.SetBinaryPathsForTest([]string{
+		filepath.Join(t.TempDir(), "missing-sshd"),
+	})
+	t.Cleanup(restore)
+	t.Setenv("PATH", filepath.Join(t.TempDir(), "empty"))
+	if sshd.Installed() {
+		t.Fatal("expected Installed false when sshd is not on PATH or configured paths")
+	}
+}
+
+func TestInstalledFromStandardPath(t *testing.T) {
+	t.Setenv("PATH", filepath.Join(t.TempDir(), "empty"))
+	systemSSHD := false
+	for _, p := range []string{"/usr/sbin/sshd", "/sbin/sshd"} {
+		info, err := os.Stat(p)
+		if err == nil && !info.IsDir() {
+			systemSSHD = true
+			break
+		}
+	}
+	got := sshd.Installed()
+	if systemSSHD && !got {
+		t.Fatal("expected Installed true when system sshd binary exists")
+	}
+	if !systemSSHD && got {
+		t.Fatal("expected Installed false when no sshd binary exists")
+	}
+}
+
+func TestInstalledFromConfiguredPath(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "sshd-bin")
+	if err := os.WriteFile(fake, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	restore := sshd.SetBinaryPathsForTest([]string{fake})
+	t.Cleanup(restore)
+	t.Setenv("PATH", filepath.Join(t.TempDir(), "empty"))
+	if !sshd.Installed() {
+		t.Fatal("expected configured sshd binary path to be detected")
+	}
+}
+
+func TestInstalledSkipsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	restore := sshd.SetBinaryPathsForTest([]string{dir, filepath.Join(t.TempDir(), "missing")})
+	t.Cleanup(restore)
+	t.Setenv("PATH", filepath.Join(t.TempDir(), "empty"))
+	if sshd.Installed() {
+		t.Fatal("expected directory path to be ignored")
+	}
+}
+
+func TestKeepalive_InstallDefaultConfPath(t *testing.T) {
+	k := &sshd.Keepalive{
+		ConfPath: "",
+		MkdirAll: func(string, os.FileMode) error { return errors.New("mkdir blocked") },
+	}
+	err := k.Install(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "mkdir sshd_config.d") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestKeepalive_InstallNilConfig(t *testing.T) {
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "sshd_config.d", "99-obscura.conf")
+	k := &sshd.Keepalive{
+		ConfPath: confPath,
+		Runner: &sshd.Runner{
+			RunCommand: func(_ context.Context, name string, args ...string) ([]byte, error) {
+				if name == "sshd" && len(args) >= 1 && args[0] == "-t" {
+					return nil, nil
+				}
+				if name == "systemctl" && len(args) == 2 && args[0] == "reload" {
+					return nil, nil
+				}
+				return nil, errors.New("unexpected command")
+			},
+		},
+	}
+	if err := k.Install(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestKeepalive_InstallWriteFail(t *testing.T) {
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "sshd_config.d", "99-obscura.conf")
+	k := &sshd.Keepalive{
+		ConfPath: confPath,
+		Config: &sshd.Config{
+			WriteFile: func(string, []byte, os.FileMode) error { return errors.New("write failed") },
+		},
+	}
+	err := k.Install(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "write ssh keepalive conf") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestKeepalive_InstallUsesRemoveFileHook(t *testing.T) {
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "sshd_config.d", "99-obscura.conf")
+	removed := false
+	k := &sshd.Keepalive{
+		ConfPath: confPath,
+		Config:   &sshd.Config{ReadFile: os.ReadFile, WriteFile: os.WriteFile},
+		RemoveFile: func(name string) error {
+			removed = true
+			return os.Remove(name)
+		},
+		Runner: &sshd.Runner{
+			RunCommand: func(context.Context, string, ...string) ([]byte, error) {
+				return []byte("bad"), errors.New("sshd -t failed")
+			},
+		},
+	}
+	if err := k.Install(context.Background()); err == nil {
+		t.Fatal("expected install error")
+	}
+	if !removed {
+		t.Fatal("expected remove hook on install failure")
+	}
+}
+
+func TestKeepalive_RemoveRemoveFail(t *testing.T) {
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "99-obscura.conf")
+	if err := os.WriteFile(confPath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	k := &sshd.Keepalive{
+		ConfPath:   confPath,
+		RemoveFile: func(string) error { return errors.New("remove failed") },
+	}
+	err := k.Remove(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "remove ssh keepalive conf") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestKeepalive_RemoveReloadFail(t *testing.T) {
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "99-obscura.conf")
+	if err := os.WriteFile(confPath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	k := &sshd.Keepalive{
+		ConfPath: confPath,
+		Runner: &sshd.Runner{
+			RunCommand: func(context.Context, string, ...string) ([]byte, error) {
+				return []byte("reload failed"), errors.New("reload failed")
+			},
+		},
+	}
+	err := k.Remove(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "reload failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestKeepalive_RemoveNilRunner(t *testing.T) {
+	dir := t.TempDir()
+	confPath := filepath.Join(dir, "99-obscura.conf")
+	if err := os.WriteFile(confPath, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	k := &sshd.Keepalive{ConfPath: confPath}
+	_ = k.Remove(context.Background())
+}

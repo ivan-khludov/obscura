@@ -35,6 +35,7 @@ func TestRestoreBackupCheckAndReload(t *testing.T) {
 	checker := &checkRecorder{}
 	reloader := &reloadRecorder{}
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, checker, reloader)
+	wireStubSSHKeepalive(t, svc, dir)
 	ctx := context.Background()
 	archive := filepath.Join(dir, "backup.tar.gz")
 	if err := backup.Create(archive, []string{app.DBPath}); err != nil {
@@ -84,6 +85,7 @@ func TestUninstallFull(t *testing.T) {
 	_ = man.Save()
 	fw := &trackingFirewall{}
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, fw, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	confPath := filepath.Join(dir, "99-obscura.conf")
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: confPath, Reload: func() error { return nil }})
 	ctx := context.Background()
@@ -122,6 +124,7 @@ func TestRestoreBackupWithoutCheckAndReload(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, nil, nil)
+	wireStubSSHKeepalive(t, svc, dir)
 	archive := filepath.Join(dir, "backup.tar.gz")
 	if err := backup.Create(archive, []string{app.DBPath}); err != nil {
 		t.Fatal(err)
@@ -141,12 +144,119 @@ func TestRestoreBackupCheckFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, failChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	archive := filepath.Join(dir, "backup.tar.gz")
 	if err := backup.Create(archive, []string{app.DBPath}); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.RestoreBackup(context.Background(), archive); err == nil {
 		t.Fatal("expected check failure")
+	}
+}
+
+func TestUninstallPlanFiltersSSHRule(t *testing.T) {
+	dir := t.TempDir()
+	app := &config.App{DataDir: dir, DBPath: filepath.Join(dir, "state.db"), ConfigPath: filepath.Join(dir, "c.json"), ManifestPath: filepath.Join(dir, "manifest.json")}
+	st := mustOpenStore(t, app.DBPath)
+	man := manifest.NewManager(app.ManifestPath)
+	_ = man.Load()
+	man.SetSSHPort(22)
+	man.AddFirewallRule("22/tcp")
+	man.AddFirewallRule("443/tcp")
+	_ = man.Save()
+	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, &trackingFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	plan := svc.UninstallPlan()
+	if len(plan.RemoveFirewall) != 1 || plan.RemoveFirewall[0] != "443/tcp" {
+		t.Fatalf("expected only VPN rule in plan, got %#v", plan.RemoveFirewall)
+	}
+}
+
+func TestUninstallFullKeepsSSHRule(t *testing.T) {
+	dir := t.TempDir()
+	app := &config.App{DataDir: dir, DBPath: filepath.Join(dir, "state.db"), ConfigPath: filepath.Join(dir, "c.json"), ManifestPath: filepath.Join(dir, "manifest.json")}
+	st := mustOpenStore(t, app.DBPath)
+	man := manifest.NewManager(app.ManifestPath)
+	_ = man.Load()
+	man.SetSSHPort(22)
+	man.AddFirewallRule("22/tcp")
+	man.AddFirewallRule("443/tcp")
+	_ = man.Save()
+	fw := &trackingFirewall{}
+	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, fw, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
+	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
+	if err := svc.UninstallFull(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	for _, rule := range fw.deleted {
+		if rule == "22/tcp" {
+			t.Fatalf("SSH rule must not be deleted, got %#v", fw.deleted)
+		}
+	}
+	if len(fw.deleted) != 1 || fw.deleted[0] != "443/tcp" {
+		t.Fatalf("expected only VPN rule deleted, got %#v", fw.deleted)
+	}
+}
+
+func TestUninstallFullRemovesObscuraBinary(t *testing.T) {
+	dir := t.TempDir()
+	app := &config.App{DataDir: dir, DBPath: filepath.Join(dir, "state.db"), ConfigPath: filepath.Join(dir, "c.json"), ManifestPath: filepath.Join(dir, "manifest.json"), DevMode: false}
+	st := mustOpenStore(t, app.DBPath)
+	man := manifest.NewManager(app.ManifestPath)
+	_ = man.Load()
+	_ = man.Save()
+	binPath := filepath.Join(dir, "obscura")
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, &trackingFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
+	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
+	svc.SetSelfExecutableForTest(func() (string, error) { return binPath, nil })
+	plan := svc.UninstallPlan()
+	found := false
+	for _, b := range plan.RemoveBinaries {
+		if b == binPath {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected obscura binary in plan, got %#v", plan.RemoveBinaries)
+	}
+	if err := svc.UninstallFull(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(binPath); !os.IsNotExist(err) {
+		t.Fatalf("expected obscura binary removed, err=%v", err)
+	}
+}
+
+func TestUninstallFullDevModeKeepsBinary(t *testing.T) {
+	dir := t.TempDir()
+	app := &config.App{DataDir: dir, DBPath: filepath.Join(dir, "state.db"), ConfigPath: filepath.Join(dir, "c.json"), ManifestPath: filepath.Join(dir, "manifest.json"), DevMode: true}
+	st := mustOpenStore(t, app.DBPath)
+	man := manifest.NewManager(app.ManifestPath)
+	_ = man.Load()
+	_ = man.Save()
+	binPath := filepath.Join(dir, "obscura")
+	if err := os.WriteFile(binPath, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, &trackingFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
+	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
+	svc.SetSelfExecutableForTest(func() (string, error) { return binPath, nil })
+	plan := svc.UninstallPlan()
+	for _, b := range plan.RemoveBinaries {
+		if b == binPath {
+			t.Fatalf("dev mode must not list obscura binary, got %#v", plan.RemoveBinaries)
+		}
+	}
+	if err := svc.UninstallFull(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(binPath); err != nil {
+		t.Fatalf("expected obscura binary preserved in dev mode, err=%v", err)
 	}
 }
 
@@ -163,6 +273,7 @@ func TestUninstallFullWithPlan(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(dir, "extra.txt"), []byte("x"), 0o644)
 	_ = os.WriteFile(filepath.Join(dir, "bin"), []byte("x"), 0o755)
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, &trackingFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
 	if err := svc.UninstallFull(context.Background(), false); err != nil {
 		t.Fatal(err)
@@ -183,6 +294,7 @@ func TestCreateBackupMkdirFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	if _, err := svc.CreateBackup(context.Background()); err == nil {
 		t.Fatal("expected mkdir error")
 	}
@@ -198,6 +310,7 @@ func TestRestoreBackupReloadFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, &reloadFail{})
+	wireStubSSHKeepalive(t, svc, dir)
 	archive := filepath.Join(dir, "backup.tar.gz")
 	if err := backup.Create(archive, []string{app.DBPath}); err != nil {
 		t.Fatal(err)
@@ -226,6 +339,7 @@ func TestUninstallSysctlFail(t *testing.T) {
 	man := manifest.NewManager(app.ManifestPath)
 	_ = man.Load()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetSysctlForTest(&sysctl.Manager{
 		ConfPath:   filepath.Join(dir, "sysctl.conf"),
 		RemoveFile: func(string) error { return fmt.Errorf("remove failed") },
@@ -305,6 +419,7 @@ func TestUninstallFullStopServices(t *testing.T) {
 	man.AddService("sing-box.service")
 	_ = man.Save()
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
 	if err := svc.UninstallFull(context.Background(), false); err != nil {
 		t.Fatal(err)
@@ -322,6 +437,7 @@ func TestUninstallFullRemoveFiles(t *testing.T) {
 	_ = man.Save()
 	_ = os.WriteFile(extra, []byte("x"), 0o644)
 	svc := service.NewService(app, st, runtime.NewProtocolRegistry(), man, firewall.NopFirewall{}, singboxcheck.NopChecker{}, systemd.NopManager{})
+	wireStubSSHKeepalive(t, svc, dir)
 	svc.SetSysctlForTest(&sysctl.Manager{ConfPath: filepath.Join(dir, "sysctl.conf"), Reload: func() error { return nil }, RemoveFile: os.Remove})
 	if err := svc.UninstallFull(context.Background(), false); err != nil {
 		t.Fatal(err)
