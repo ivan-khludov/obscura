@@ -1,0 +1,66 @@
+version: 2
+
+project_name: obscura
+
+builds:
+  - id: obscura
+    main: ./cmd/obscura
+    binary: obscura
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/ivan-khludov/obscura/internal/version.Version={{.Version}}
+  - id: obscura-cli
+    main: ./cmd/obscura-cli
+    binary: obscura-cli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/ivan-khludov/obscura/internal/version.Version={{.Version}}
+  - id: obscura-tui
+    main: ./cmd/obscura-tui
+    binary: obscura-tui
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/ivan-khludov/obscura/internal/version.Version={{.Version}}
+
+archives:
+  - formats: [tar.gz]
+    name_template: obscura_{{ .Version }}_linux_{{ .Arch }}
+    files:
+      - none*
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+
+release:
+  github:
+    owner: ivan-khludov
+    name: obscura

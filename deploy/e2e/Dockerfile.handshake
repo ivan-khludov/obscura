@@ -1,0 +1,14 @@
+# syntax=docker/dockerfile:1
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+	openssl \
+	&& rm -rf /var/lib/apt/lists/* \
+	&& openssl req -x509 -newkey rsa:2048 \
+	-keyout /tls.key -out /tls.crt -days 3650 -nodes \
+	-subj /CN=handshake \
+	-addext "subjectAltName=DNS:handshake"
+
+EXPOSE 443
+CMD ["openssl", "s_server", "-accept", "443", "-cert", "/tls.crt", "-key", "/tls.key", "-www"]

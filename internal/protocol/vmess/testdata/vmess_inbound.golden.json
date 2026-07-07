@@ -1,0 +1,23 @@
+{
+  "listen": "0.0.0.0",
+  "listen_port": 443,
+  "tag": "vpn-main",
+  "tls": {
+    "alpn": [
+      "h2",
+      "http/1.1"
+    ],
+    "certificate_path": "/etc/obscura/certs/vpn-main.crt",
+    "enabled": true,
+    "key_path": "/etc/obscura/certs/vpn-main.key",
+    "server_name": "example.com"
+  },
+  "type": "vmess",
+  "users": [
+    {
+      "alterId": 0,
+      "name": "phone",
+      "uuid": "173ebb15-589c-4b6f-9b12-7300accef62e"
+    }
+  ]
+}

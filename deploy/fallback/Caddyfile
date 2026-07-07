@@ -1,0 +1,4 @@
+127.0.0.1:8080 {
+	root * /etc/obscura/fallback/site
+	file_server
+}

@@ -1,0 +1,20 @@
+{
+  "address": [
+    "10.8.0.1/24"
+  ],
+  "listen_port": 51820,
+  "mtu": 1408,
+  "peers": [
+    {
+      "allowed_ips": [
+        "10.8.0.2/32"
+      ],
+      "persistent_keepalive_interval": 25,
+      "public_key": "KjJQY8Q0pFnb8Vd+hretDZwllZPwuoVrFBqPLTSK4Uk="
+    }
+  ],
+  "private_key": "zUdej/+RmrIdiQRgbObVpwH/JT+xFnmpMjRcNx0J7Uk=",
+  "system": false,
+  "tag": "vpn-wg",
+  "type": "wireguard"
+}

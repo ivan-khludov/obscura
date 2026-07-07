@@ -1,0 +1,17 @@
+{
+  "listen": "0.0.0.0",
+  "listen_port": 8443,
+  "tag": "vpn-main",
+  "tls": {
+    "certificate_path": "/etc/obscura/certs/vpn-main.crt",
+    "enabled": true,
+    "key_path": "/etc/obscura/certs/vpn-main.key"
+  },
+  "type": "http",
+  "users": [
+    {
+      "password": "secret",
+      "username": "phone"
+    }
+  ]
+}

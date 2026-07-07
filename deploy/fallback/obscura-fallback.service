@@ -1,0 +1,12 @@
+[Unit]
+Description=obscura TLS fallback stub (Caddy)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/caddy run --config /etc/obscura/fallback/Caddyfile --adapter caddyfile
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

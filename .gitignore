@@ -1,0 +1,51 @@
+# Binaries
+/bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.txt
+coverage.html
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Dependency directories (legacy)
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local dev / runtime (if running with --dev in tree)
+.obscura/
+
+# Env and secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Archives from manual testing
+*.tar.gz
+
+# GoReleaser snapshot output
+dist/
+
+# Test output
+*.out

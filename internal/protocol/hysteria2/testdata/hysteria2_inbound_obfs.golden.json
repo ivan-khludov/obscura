@@ -1,0 +1,27 @@
+{
+  "down_mbps": 100,
+  "listen": "0.0.0.0",
+  "listen_port": 443,
+  "obfs": {
+    "password": "obfs-secret",
+    "type": "salamander"
+  },
+  "tag": "vpn-main",
+  "tls": {
+    "alpn": [
+      "h3"
+    ],
+    "certificate_path": "/etc/obscura/certs/vpn-main.crt",
+    "enabled": true,
+    "key_path": "/etc/obscura/certs/vpn-main.key",
+    "server_name": "example.com"
+  },
+  "type": "hysteria2",
+  "up_mbps": 100,
+  "users": [
+    {
+      "name": "phone",
+      "password": "secret"
+    }
+  ]
+}

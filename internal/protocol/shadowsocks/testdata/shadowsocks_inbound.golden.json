@@ -1,0 +1,14 @@
+{
+  "listen": "0.0.0.0",
+  "listen_port": 8388,
+  "method": "2022-blake3-aes-128-gcm",
+  "password": "8JCsPssfgS8tiRwiMlhARg==",
+  "tag": "vpn-main",
+  "type": "shadowsocks",
+  "users": [
+    {
+      "name": "phone",
+      "password": "PCD2Z4o12bKUoFa3cC97Hw=="
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "listen": "0.0.0.0",
+  "listen_port": 8080,
+  "tag": "vpn-main",
+  "type": "http",
+  "users": [
+    {
+      "password": "secret",
+      "username": "phone"
+    }
+  ]
+}

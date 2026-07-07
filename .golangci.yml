@@ -1,0 +1,43 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - depguard
+    - errcheck
+    - gofmt
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+    - godot
+
+linters-settings:
+  depguard:
+    rules:
+      protocol-no-tui:
+        files:
+          - "internal/protocol/**"
+        deny:
+          - pkg: "github.com/ivan-khludov/obscura/internal/tui"
+            desc: "protocol packages must not import tui"
+      internal-cmd-no-tui:
+        files:
+          - "internal/cmd/**"
+        deny:
+          - pkg: "github.com/ivan-khludov/obscura/internal/tui"
+            desc: "cmd package must not import tui"
+  revive:
+    rules:
+      - name: exported
+        disabled: false
+      - name: package-comments
+        disabled: false
+  godot:
+    scope: all
+    capital: true
+
+issues:
+  exclude-use-default: false

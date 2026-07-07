@@ -1,0 +1,10 @@
+version: "1.14.0-alpha.26"
+assets:
+  linux-amd64:
+    url: "https://github.com/SagerNet/sing-box/releases/download/v1.14.0-alpha.26/sing-box-1.14.0-alpha.26-linux-amd64.tar.gz"
+    sha256: "c571e6f6c4ba8ca58185eb6c7f3f1c9cbd84c2744079569852513c5d155595bc"
+    binary: "sing-box-1.14.0-alpha.26-linux-amd64/sing-box"
+  linux-arm64:
+    url: "https://github.com/SagerNet/sing-box/releases/download/v1.14.0-alpha.26/sing-box-1.14.0-alpha.26-linux-arm64.tar.gz"
+    sha256: "6b3c30b02aed5736077c5195f95fb9aac73b6f69c9dad71d71d1a7b77f19479e"
+    binary: "sing-box-1.14.0-alpha.26-linux-arm64/sing-box"

@@ -1,0 +1,26 @@
+# syntax=docker/dockerfile:1
+
+FROM debian:bookworm-slim AS sing-box
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+	ca-certificates \
+	curl \
+	iproute2 \
+	&& rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY internal/install/assets.yaml internal/install/assets.yaml
+COPY deploy/lab/fetch-sing-box.sh deploy/lab/fetch-sing-box.sh
+RUN chmod +x deploy/lab/fetch-sing-box.sh
+RUN --mount=type=cache,target=/var/cache/sing-box \
+	deploy/lab/fetch-sing-box.sh /sing-box /var/cache/sing-box
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+	ca-certificates \
+	curl \
+	iproute2 \
+	&& rm -rf /var/lib/apt/lists/*
+
+COPY --from=sing-box /sing-box /usr/local/bin/sing-box
+
+CMD ["sleep", "infinity"]

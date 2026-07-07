@@ -1,0 +1,182 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+      - run: go test ./... -race -count=1
+      - name: apply coverage gate
+        run: make test-apply-coverage
+      - name: backup coverage gate
+        run: make test-backup-coverage
+      - name: certs coverage gate
+        run: make test-certs-coverage
+      - name: cmd coverage gate
+        run: make test-cmd-coverage
+      - name: config coverage gate
+        run: make test-config-coverage
+      - name: doctor coverage gate
+        run: make test-doctor-coverage
+      - name: domain coverage gate
+        run: make test-domain-coverage
+      - name: fallback coverage gate
+        run: make test-fallback-coverage
+      - name: firewall coverage gate
+        run: make test-firewall-coverage
+      - name: install coverage gate
+        run: make test-install-coverage
+      - name: logs coverage gate
+        run: make test-logs-coverage
+      - name: manifest coverage gate
+        run: make test-manifest-coverage
+      - name: orchestration coverage gate
+        run: make test-orchestration-coverage
+      - name: platform coverage gate
+        run: make test-platform-coverage
+      - name: qr coverage gate
+        run: make test-qr-coverage
+      - name: render coverage gate
+        run: make test-render-coverage
+      - name: singboxcheck coverage gate
+        run: make test-singboxcheck-coverage
+      - name: sshd coverage gate
+        run: make test-sshd-coverage
+      - name: store coverage gate
+        run: make test-store-coverage
+      - name: sysctl coverage gate
+        run: make test-sysctl-coverage
+      - name: systemd coverage gate
+        run: make test-systemd-coverage
+      - name: version coverage gate
+        run: make test-version-coverage
+      - name: protocol coverage gate
+        run: make test-protocol-coverage
+      - name: runtime coverage gate
+        run: make test-runtime-coverage
+      - name: service coverage gate
+        run: make test-service-coverage
+      - name: tui coverage gate
+        run: make test-tui-coverage
+      - run: |
+          go build -o /dev/null ./cmd/obscura
+          go build -o /dev/null ./cmd/obscura-cli
+          go build -o /dev/null ./cmd/obscura-tui
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          install-mode: goinstall
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - name: Install sing-box
+        run: |
+          curl -sL -o /tmp/sb.tar.gz "https://github.com/SagerNet/sing-box/releases/download/v1.14.0-alpha.26/sing-box-1.14.0-alpha.26-linux-amd64.tar.gz"
+          tar xzf /tmp/sb.tar.gz -C /tmp
+          sudo cp /tmp/sing-box-1.14.0-alpha.26-linux-amd64/sing-box /usr/local/bin/sing-box
+      - run: go test ./test/integration/... -tags=integration -count=1
+
+  e2e-http:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go test ./test/e2e/http/... -tags=e2e -count=1 -timeout 15m
+
+  e2e-socks5:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go test ./test/e2e/socks5/... -tags=e2e -count=1 -timeout 15m
+
+  e2e-shadowsocks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go test ./test/e2e/shadowsocks/... -tags=e2e -count=1 -timeout 15m
+
+  e2e-trojan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go test ./test/e2e/trojan/... -tags=e2e -count=1 -timeout 20m
+
+  e2e-wireguard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go test ./test/e2e/wireguard/... -tags=e2e -count=1 -timeout 20m
+
+  e2e-vmess:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go test ./test/e2e/vmess/... -tags=e2e -count=1 -timeout 20m
+
+  e2e-vless:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go test ./test/e2e/vless/... -tags=e2e -count=1 -timeout 20m
+
+  e2e-hysteria2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go test ./test/e2e/hysteria2/... -tags=e2e -count=1 -timeout 20m
+
+  e2e-tuic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go test ./test/e2e/tuic/... -tags=e2e -count=1 -timeout 20m
