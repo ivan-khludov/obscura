@@ -594,9 +594,13 @@ func TestInstalled(t *testing.T) {
 }
 
 func TestInstalledAbsent(t *testing.T) {
+	restore := sshd.SetBinaryPathsForTest([]string{
+		filepath.Join(t.TempDir(), "missing-sshd"),
+	})
+	t.Cleanup(restore)
 	t.Setenv("PATH", filepath.Join(t.TempDir(), "empty"))
 	if sshd.Installed() {
-		t.Fatal("expected Installed false when sshd is not on PATH or standard paths")
+		t.Fatal("expected Installed false when sshd is not on PATH or configured paths")
 	}
 }
 
