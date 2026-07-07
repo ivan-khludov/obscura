@@ -46,7 +46,7 @@ Continue with the [Install](#install) and [Quick start](#quick-start) sections b
 **From a release:**
 
 ```bash
-VERSION=0.0.1  # see https://github.com/ivan-khludov/obscura/releases for the latest version
+VERSION=0.0.2  # see https://github.com/ivan-khludov/obscura/releases for the latest version
 ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -fsSL "https://github.com/ivan-khludov/obscura/releases/download/v${VERSION}/obscura_${VERSION}_linux_${ARCH}.tar.gz" \
   | sudo tar -xz -C /usr/local/bin obscura
